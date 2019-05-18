@@ -1,0 +1,51 @@
+; john tramel
+; cecs 460
+; TramelBlaze Assembly Program
+; Working counter for project
+
+; declare constants for coding
+
+ZEROS  	    EQU     0000
+ONE         EQU     0001
+COUNTER	    EQU     R9
+ANYADRS     EQU     0460
+
+START       ENINT
+
+; initialize R0/R1 to 0
+
+            LOAD    COUNTER,  ZEROS   
+            LOAD    R0,       ZEROS
+
+; main loop incrementing R0/R1
+
+FIRST       ADD     R0,       ONE
+            JUMP    FIRST
+
+; address for ISR
+    
+            ADDRESS 0300
+            
+; set up for loop
+
+ISR
+            INPUT   RA,       ANYADRS
+            AND     RA,       0001
+            JUMPZ   DECREMENT
+			ADD	    R9,       ONE
+            OUTPUT  R9,       1234
+            RETEN
+
+DECREMENT	SUB	    R9,	      ONE
+            OUTPUT  R9,       1234
+            RETEN
+            
+; ISR vectored through 0FFE
+
+            ADDRESS 0FFE
+ENDIT       JUMP    ISR
+
+            END
+~
+~
+~
