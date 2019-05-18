@@ -1,5 +1,6 @@
 `timescale 1ns / 1ps
 //Use this to see the TX and RX in xilinx log. Use it with while checking memory in xilinx simulation
+//add additional things to the RX to test key inputs.
 module top_level_test;
 
 	// Inputs
