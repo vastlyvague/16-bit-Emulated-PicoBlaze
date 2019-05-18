@@ -1,17 +1,5 @@
 `timescale 1ns / 1ps
-//****************************************************************//
-//  File name: top_level.v                                        //
-//                                                                //
-//  Created by       Thomas Nguyen on 3/26/19.                    //
-//  Copyright c 2019 Thomas Nguyen. All rights reserved.          //
-//                                                                //
-//                                                                //
-//  In submitting this file for class work at CSULB               //
-//  I am confirming that this is my work and the work             //
-//  of no one else. In submitting this code I acknowledge that    //
-//  plagiarism in student project work is subject to dismissal.   //
-//  from the class                                                //
-//****************************************************************//
+//Use this to see the TX and RX in xilinx log. Use it with while checking memory in xilinx simulation
 module top_level_test;
 
 	// Inputs
