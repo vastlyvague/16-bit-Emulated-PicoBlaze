@@ -1,0 +1,198 @@
+; Thomas Nguyen
+; 016238935
+; CECS 460
+; Transmit Engine Assembly Code
+;
+; Assembly code to transmit the message
+; CSULB CECS 460 - [COUNTER REGISTER]<CR><LF>
+; to a terminal. It will shift left through the
+; LEDs on the NEXYS 4 FPGA while in the main loop.
+
+; ================================================
+; Declare EQU constants for register names
+; ================================================
+ZEROS  	    EQU     0000
+ONE         EQU     0001
+
+; ================================================
+; Register EQU
+; ================================================
+SCRATCH     EQU     R0 ; Scratch RAM
+SP          EQU     R1 ; Stack Pointer
+TEMP        EQU     R3 ; Temp reg that takes Scratch mem
+LEDS        EQU     R4 ;
+DELAY       EQU     RE ; Delays leds
+DELAY2      EQU     RF ;
+
+;Temp Reg for Bin to ASCII
+RE          EQU     R7 ; Temp Reg for current count
+RD          EQU     R8 ; Temp Reg for max count
+RB          EQU     R9 ; Temp Reg for Adding
+
+; ================================================
+; Initialization
+; ================================================
+START       ENINT
+            LOAD    SP,         ZEROS
+            LOAD    LEDS,       ONE
+            LOAD    R2,         ZEROS   ; Counter register
+            LOAD    DELAY,      ZEROS
+            LOAD    DELAY2,     ZEROS
+
+; ================================================
+; Initialize Scratch Memory with ASCII Hex values of characters from message
+; ================================================
+            LOAD    SCRATCH,    0043    ; C
+            CALL    STORER
+            LOAD    SCRATCH,    0053    ; S
+            CALL    STORER
+            LOAD    SCRATCH,    0055    ; U
+            CALL    STORER
+            LOAD    SCRATCH,    004C    ; L
+            CALL    STORER
+            LOAD    SCRATCH,    0042    ; B
+            CALL    STORER
+            LOAD    SCRATCH,    0020    ; Space
+            CALL    STORER
+            LOAD    SCRATCH,    0043    ; C
+            CALL    STORER
+            LOAD    SCRATCH,    0045    ; E
+            CALL    STORER
+            LOAD    SCRATCH,    0043    ; C
+            CALL    STORER
+            LOAD    SCRATCH,    0053    ; S
+            CALL    STORER
+            LOAD    SCRATCH,    0020    ; Space
+            CALL    STORER
+            LOAD    SCRATCH,    0034    ; 4
+            CALL    STORER
+            LOAD    SCRATCH,    0036    ; 6
+            CALL    STORER
+            LOAD    SCRATCH,    0030    ; 0
+            CALL    STORER
+            LOAD    SCRATCH,    0020    ; Space
+            CALL    STORER
+            LOAD    SCRATCH,    002D    ; -
+            CALL    STORER
+            LOAD    SCRATCH,    0020    ; Space
+            CALL    STORER              
+            LOAD    SCRATCH,    005B    ; [
+            CALL    STORER              ; SP @ 0x12
+            LOAD    SP,         ZEROS   ; Set to Addr 0
+            
+; ================================================
+; MAIN LOOP for LEDs
+; ================================================
+MAIN        OUTPUT  LEDS,       ONE
+            COMP    LEDS,       8000
+            JUMPNZ  LEDDELAY
+            LOAD    LEDS,       ONE
+            JUMP    MAIN
+            
+LEDDELAY    RL      LEDS
+            LOAD    DELAY,      FFFF
+            LOAD    DELAY2,     0004
+COUNT_DWN   SUB     DELAY,      ONE
+            COMP,   DELAY,      ZEROS
+            JUMPNZ  COUNT_DWN
+            LOAD    DELAY,      FFFF
+            SUB     DELAY2,     ONE
+            COMP    DELAY2,     ZEROS
+            JUMPNZ  COUNT_DWN
+            JUMP    MAIN
+            
+; ================================================
+; Bin to ASCII
+; ================================================
+            ADDRESS 0100
+BIN2ASCII   LOAD    RE,         R2
+            LOAD    RD,         2710    ; 10,000
+            CALL    FINDIT
+            ADD     RB,         0030
+            STORE   RB,         0012
+            
+            LOAD    RD,         03E8    ;  1,000
+            CALL    FINDIT
+            ADD     RB,         0030
+            STORE   RB,         0013
+            
+            LOAD    RD,         0064    ;    100
+            CALL    FINDIT
+            ADD     RB,         0030
+            STORE   RB,         0014
+            
+            LOAD    RD,         000A    ;     10
+            CALL    FINDIT
+            ADD     RB,         0030
+            STORE   RB,         0015
+            
+            LOAD    RD,         ONE
+            CALL    FINDIT
+            ADD     RB,         0030    ;      1
+            STORE   RB,         0016
+            RETURN                      ; return to ISR
+            
+; ================================================
+; Subroutines for Bin to ASCII
+; ================================================
+            ADDRESS 0200
+FINDIT      LOAD    RB,         ZEROS
+FNDLOOP     SUB     RE,         RD      ; RE <- RE - RD
+            JUMPC   RESTORE             ; if carry jump
+            ADD     RB,         ONE
+            JUMP    FNDLOOP
+            
+RESTORE     ADD     RE,         RD      ; RE <- RE + RD
+            RETURN                      ; return to procedure
+
+; ================================================
+; Store to scratch ram and increment pointer
+; ================================================
+STORER      STORE   SCRATCH,    (SP)
+            ADD     SP,         ONE
+            RETURN
+
+; ================================================
+; Interrupt Service Routine
+; ================================================
+            ADDRESS 0300
+ISR         COMP    SP,         0012    ; Check if SP is 18
+            CALLZ   BIN2ASCII           ; Display Counter Register
+            
+            COMP    SP,         0017    ; Check when SP is 24
+            CALLZ   CR_LF
+            
+            FETCH   TEMP,       (SP)    ; fetch from memory pointed by sp
+            OUTPUT  TEMP,       ZEROS   ; output memory content @loc
+            ADD     SP,         ONE     ; Increment through SP
+            
+            COMP    SP,         00A0    ; Check if at end of message
+            JUMPZ   RESET
+            RETEN
+            
+; ================================================
+; Do carriage return and line feed
+; ================================================ 
+CR_LF       LOAD    SCRATCH     005D    ; ]
+            CALL    STORER
+            LOAD    SCRATCH,    000D    ; CR
+            CALL    STORER
+            LOAD    SCRATCH,    000A    ; LF
+            CALL    STORER
+            LOAD    SP,         0017    ; Set SP to 19 again
+            RETURN
+
+; ================================================
+; Restart or Resets SP
+; ================================================ 
+RESET       LOAD    SP,         ZEROS
+            ADD     R2,         ONE
+            RETEN
+            
+; ================================================
+; ISR vectored through 0FFE
+; ================================================
+            ADDRESS 0FFE
+ENDIT       JUMP    ISR
+
+            END
