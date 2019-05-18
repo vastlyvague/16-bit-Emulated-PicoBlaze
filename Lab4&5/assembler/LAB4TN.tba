@@ -1,0 +1,520 @@
+; Thomas Nguyen
+; 016238935
+; CECS 460
+; SOPC TSI External Memory w/ UART
+;
+; Assembly code for UART communicating with an
+; external memory outside of the MCU. The memory
+; will be written to on every receive from UART.
+; It can be accessed and get a memory dump by the use
+; of the "%" character.
+
+; ================================================
+; Declare EQU constants
+; ================================================
+ZEROS  	    EQU     0000
+ONE         EQU     0001
+
+; ================================================
+; Register EQU
+; ================================================
+SCRATCH     EQU     R0 ; Scratch RAM
+SP          EQU     R1 ; Stack Pointer
+SRAM        EQU     R2 ; SRAM pointer
+TEMP        EQU     R3 ; Temp reg that takes Scratch mem
+LEDS        EQU     R4 ;
+STATUS      EQU     R5 ; Status register
+COUNT       EQU     R6 ; Char Counter
+DISPLAY     EQU     RA ; Keeps track of what is being displayed
+RX          EQU     RB ; Received data bits
+CONFIG      EQU     RC ; The config switch register
+S_INDEX     EQU     RD ; Keep track of inputted strings
+DELAY       EQU     RE ; Delays leds
+DELAY2      EQU     RF ;
+
+;Temp Reg for Bin to ASCII
+RE          EQU     R7 ; Temp Reg for current count
+RD          EQU     R8 ; Temp Reg for max count
+RB          EQU     R9 ; Temp Reg for Adding
+
+; ================================================
+; Initialization
+; ================================================
+START       INPUT   CONFIG,     0005
+            OUTPUT  CONFIG,     0006
+            LOAD    COUNT,      ZEROS
+            LOAD    SP,         ZEROS
+            LOAD    CONFIG,     ZEROS
+            LOAD    LEDS,       ONE
+            LOAD    TEMP,       ZEROS
+            LOAD    STATUS,     ZEROS
+            LOAD    DISPLAY,    0008
+            LOAD    S_INDEX,    ZEROS
+            LOAD    DELAY,      ZEROS
+            LOAD    DELAY2,     ZEROS
+            LOAD    SRAM,       8000
+
+; ================================================
+; Initialize Scratch Memory with ASCII Hex values of characters from message
+; ================================================
+            LOAD    SCRATCH,    0043    ; C
+            CALL    STORER
+            LOAD    SCRATCH,    0053    ; S
+            CALL    STORER
+            LOAD    SCRATCH,    0055    ; U
+            CALL    STORER
+            LOAD    SCRATCH,    004C    ; L
+            CALL    STORER
+            LOAD    SCRATCH,    0042    ; B
+            CALL    STORER
+            LOAD    SCRATCH,    0020    ; Space
+            CALL    STORER
+            LOAD    SCRATCH,    0043    ; C
+            CALL    STORER
+            LOAD    SCRATCH,    0045    ; E
+            CALL    STORER
+            LOAD    SCRATCH,    0043    ; C
+            CALL    STORER
+            LOAD    SCRATCH,    0053    ; S
+            CALL    STORER
+            LOAD    SCRATCH,    0020    ; Space
+            CALL    STORER
+            LOAD    SCRATCH,    0034    ; 4
+            CALL    STORER
+            LOAD    SCRATCH,    0036    ; 6
+            CALL    STORER
+            LOAD    SCRATCH,    0030    ; 0
+            CALL    STORER
+            LOAD    SCRATCH,    000D    ; <CR>
+            CALL    STORER
+            LOAD    SCRATCH,    000A    ; <LF>
+            CALL    STORER              ; Stored @ 0x0F, SP @ 0x10
+            LOAD    SP,         00F0    ;
+            LOAD    SCRATCH,    000D
+            CALL    STORER
+            LOAD    SCRATCH,    000A    ; <LF>
+            CALL    STORER
+            LOAD    SP,         8000   ; Set to Addr 8000 to prepare for mem_dump
+            ENINT
+            
+; ================================================
+; MAIN LOOP for LEDs
+; ================================================
+MAIN        OUTPUT  LEDS,       0002
+            COMP    LEDS,       9000
+            JUMPNZ  LEDDELAY
+            INPUT   CONFIG,     0005
+            OUTPUT  CONFIG,     0006
+            LOAD    LEDS,       ONE
+            JUMP    MAIN
+            
+LEDDELAY    RL      LEDS
+            LOAD    DELAY,      FFFF
+            LOAD    DELAY2,     0004
+COUNT_DWN   SUB     DELAY,      ONE
+            COMP,   DELAY,      ZEROS
+            JUMPNZ  COUNT_DWN
+            LOAD    DELAY,      FFFF
+            SUB     DELAY2,     ONE
+            COMP    DELAY2,     ZEROS
+            JUMPNZ  COUNT_DWN
+            JUMP    MAIN
+            
+; ================================================
+; Bin to ASCII
+; ================================================
+            ADDRESS 0200
+BIN2ASCII   ADD     COUNT,      S_INDEX
+            LOAD    S_INDEX,    ZEROS
+            LOAD    RE,         COUNT
+            LOAD    RD,         2710    ; 10,000
+            CALL    FINDIT
+            ADD     RB,         0030
+            STORE   RB,         00F2
+            
+            LOAD    RD,         03E8    ;  1,000
+            CALL    FINDIT
+            ADD     RB,         0030
+            STORE   RB,         00F3
+            
+            LOAD    RD,         0064    ;    100
+            CALL    FINDIT
+            ADD     RB,         0030
+            STORE   RB,         00F4
+            
+            LOAD    RD,         000A    ;     10
+            CALL    FINDIT
+            ADD     RB,         0030
+            STORE   RB,         00F5
+            
+            LOAD    RD,         ONE
+            CALL    FINDIT
+            ADD     RB,         0030    ;      1
+            STORE   RB,         00F6
+            RETURN                      ; return to ISR
+            
+; ================================================
+; Subroutines for Bin to ASCII
+; ================================================
+            ADDRESS 0300
+FINDIT      LOAD    RB,         ZEROS
+FNDLOOP     SUB     RE,         RD      ; RE <- RE - RD
+            JUMPC   RESTORE             ; if carry jump
+            ADD     RB,         ONE
+            JUMP    FNDLOOP
+            
+RESTORE     ADD     RE,         RD      ; RE <- RE + RD
+            RETURN                      ; return to procedure
+
+; ================================================
+; Store to scratch ram and increment pointer
+; ================================================
+STORER      STORE   SCRATCH,    (SP)
+            ADD     SP,         ONE
+            RETURN
+
+; ================================================
+; Prompt (tomas:~$)
+; ================================================ 
+            ADDRESS 0400
+PROMPT      LOAD    SCRATCH,    0074    ; t
+            CALL    STORER              ; Stored @ 0x00
+            LOAD    SCRATCH,    0068    ; h
+            CALL    STORER
+            LOAD    SCRATCH,    006F    ; o
+            CALL    STORER
+            LOAD    SCRATCH,    006D    ; m
+            CALL    STORER
+            LOAD    SCRATCH,    0061    ; a
+            CALL    STORER
+            LOAD    SCRATCH,    0073    ; s
+            CALL    STORER
+            LOAD    SCRATCH,    003A    ; :
+            CALL    STORER
+            LOAD    SCRATCH,    007E    ; ~
+            CALL    STORER
+            LOAD    SCRATCH,    0024    ; $
+            CALL    STORER
+            LOAD    SCRATCH,    0020    ; Space
+            CALL    STORER              ; Stored @ 0x09
+            RETURN
+
+; ================================================
+; Home Town and Backspace (LONG BEACH<CR><LF><BS>)
+; ================================================ 
+HOMETOWN    LOAD    SCRATCH,    004C    ; L
+            CALL    STORER              ; Stored @ 0x0A
+            LOAD    SCRATCH,    004F    ; O
+            CALL    STORER
+            LOAD    SCRATCH,    004E    ; N
+            CALL    STORER
+            LOAD    SCRATCH,    0047    ; G
+            CALL    STORER
+            LOAD    SCRATCH,    0020    ; Space
+            CALL    STORER
+            LOAD    SCRATCH,    0042    ; B
+            CALL    STORER
+            LOAD    SCRATCH,    0045    ; E
+            CALL    STORER
+            LOAD    SCRATCH,    0041    ; A
+            CALL    STORER
+            LOAD    SCRATCH,    0043    ; C
+            CALL    STORER
+            LOAD    SCRATCH,    0048    ; H
+            CALL    STORER
+            LOAD    SCRATCH,    000D    ; <CR>
+            CALL    STORER              ; Stored @ 0x14
+            LOAD    SCRATCH,    000A    ; <LF>
+            CALL    STORER              ; Stored @ 0x15
+
+            LOAD    SCRATCH,    0008    ; Backspace
+            CALL    STORER              ; Stored @ 0x16
+            LOAD    SCRATCH,    0020    ; Space
+            CALL    STORER              ; 17
+            LOAD    SCRATCH,    0008    ; Backspace
+            CALL    STORER              ; Stored @ 0x18
+            LOAD    SP,         0D00
+            LOAD    SCRATCH,    ZEROS
+            CALL    STORER
+            LOAD    SP,         ZEROS   ; Set to Addr 0
+            RETURN
+
+; ================================================
+; Interrupt Service Routine
+; ================================================
+            ADDRESS 0500
+ISR         INPUT   STATUS,     ONE     ; read in status flag
+            AND     STATUS,     0002    ; obtain txrdy
+            COMP    STATUS,     0002    ; check if tx is high
+            CALLZ   TXRDY
+            INPUT   STATUS,     ONE
+ISR2        COMP    DISPLAY     ZEROS
+            CALLZ   RXRDY
+            RETEN
+
+; ================================================
+; TX ready
+; ================================================
+TXRDY       COMP    Display,    0008    ;MemTest Start
+            JUMPZ   MEM_TEST0
+            COMP    Display,    0009
+            JUMPZ   MEM_TEST1
+            COMP    Display,    000A
+            JUMPZ   MEM_TEST2
+            COMP    Display,    000B
+            JUMPZ   MEM_TEST3
+            COMP    Display,    000C
+            JUMPZ   MEM_TEST4
+            COMP    Display,    000D    ;MemTest End
+            JUMPZ   MEM_TEST5
+            COMP    DISPLAY,    ONE
+            JUMPNZ  PROMPT_O
+
+; ================================================
+; Displays Banner
+; ================================================
+BANNER_O    COMP    SP,         0011
+            JUMPNZ  TX_OUT
+            LOAD    SP,         ZEROS
+            CALL    PROMPT
+            CALL    HOMETOWN
+            LOAD    DISPLAY,    0002
+            
+; ================================================
+; Displays Prompt
+; ================================================
+PROMPT_O    COMP    DISPLAY,    0002
+            JUMPNZ  HOMETOWN_O
+            COMP    SP,         000A
+            JUMPNZ  TX_OUT
+            LOAD    TEMP,       RX
+            LOAD    DISPLAY,    ZEROS    ; finish with prompt message
+            
+; ================================================
+; Displays Home town
+; ================================================
+HOMETOWN_O  COMP    DISPLAY,    0003
+            JUMPNZ  CHAR_CNT_O
+            COMP    SP,         0016
+            JUMPNZ  TX_OUT
+            LOAD    SP,         ZEROS
+            LOAD    DISPLAY,    0002
+            LOAD    TEMP,       ZEROS
+            OUTPUT  TEMP,       ZEROS
+            
+; ================================================
+; Displays # of received characters
+; ================================================
+CHAR_CNT_O  COMP    DISPLAY,    0004
+            JUMPNZ  DUMP_MEM_O
+            COMP    SP,         00F7
+            JUMPNZ  TX_OUT
+            LOAD    SP,         0014
+            LOAD    DISPLAY,    0006
+
+; ================================================
+; Dumps contents of SRAM
+; ================================================
+DUMP_MEM_O  COMP    DISPLAY,    0007
+            JUMPNZ  BACKSPACE_O
+            INPUT   TEMP,       (SP)
+            OUTPUT  TEMP,       ZEROS
+            ADD     SP,         ONE
+            COMP    SP,         SRAM
+            JUMPC   TX_OUT
+
+; ================================================
+; Displays Backspace
+; ================================================
+BACKSPACE_O COMP    DISPLAY,    0005
+            JUMPNZ  CAR_RET_O
+            COMP    SP,         0019
+            JUMPNZ  TX_OUT
+            LOAD    SP,         ZEROS
+            LOAD    TEMP,       RX
+            LOAD    DISPLAY,    ZEROS
+            
+; ================================================
+; Displays Carriage Return
+; ================================================
+CAR_RET_O   COMP    DISPLAY,    0006
+            RETURNNZ
+            COMP    SP,         0016
+            JUMPNZ  TX_OUT
+            LOAD    SP,         ZEROS
+            LOAD    DISPLAY,    0002
+            LOAD    TEMP,       ZEROS
+            OUTPUT  TEMP,       ZEROS
+            JUMP    EXIT_TX
+            
+; ================================================
+; Transmits Characters through UART
+; ================================================
+TX_OUT      FETCH   TEMP,       (SP)    ; fetch from memory pointed by sp
+            OUTPUT  TEMP,       ZEROS   ; output memory content @loc
+            ADD     SP,         ONE     ; Increment through SP
+            
+EXIT_TX     RETURN
+
+; ================================================
+; Memory Testing; Display repeating A's, 5's & Address
+; ================================================
+MEM_TEST0   LOAD    SCRATCH,    AAAA
+            OUTPUT  SCRATCH,    (SP)
+            ADD     SP,         ONE
+            COMP    SP,         FFFF
+            JUMPNZ  MEM_TEST0
+            LOAD    SCRATCH,    ZEROS
+            OUTPUT  SCRATCH,    ZEROS
+            LOAD    SP,         8000
+            LOAD    DISPLAY,    0009
+MEM_TEST1   INPUT   SCRATCH,    (SP)    ;Display A's
+            OUTPUT  SCRATCH,    ZEROS
+            ADD     SP,         ONE
+            COMP    SP,         FFFF
+            RETURNC
+            LOAD    SP,         8000
+MEM_TEST2   LOAD    SCRATCH,    5555
+            OUTPUT  SCRATCH,    (SP)
+            ADD     SP,         ONE
+            COMP    SP,         FFFF
+            JUMPNZ  MEM_TEST2
+            LOAD    SP,         8000
+            LOAD    DISPLAY,    000B
+MEM_TEST3   INPUT   SCRATCH,    (SP)    ;Display 5's
+            OUTPUT  SCRATCH,    ZEROS
+            ADD     SP,         ONE
+            COMP    SP,         FFFF
+            RETURNC
+            LOAD    SP,         8000
+            LOAD    SCRATCH,    ZEROS
+            LOAD    DISPLAY,    000C
+MEM_TEST4   OUTPUT  SCRATCH,    (SP)    ;Load Address
+            ADD     SCRATCH,    ONE
+            ADD     SP,         ONE
+            COMP    SP,         FFFF
+            JUMPNZ  MEM_TEST4
+            LOAD    SP,         8000
+            OUTPUT  SCRATCH,    ZEROS
+            LOAD    DISPLAY,    000D
+MEM_TEST5   INPUT   SCRATCH,    (SP)    ;Display Address
+            OUTPUT  SCRATCH,    ZEROS
+            ADD     SP,         ONE
+            COMP    SP,         FFFF
+            RETURNC
+            LOAD    SCRATCH,    ZEROS
+            LOAD    SP,         00F0
+            FETCH   TEMP,       (SP)
+            OUTPUT  TEMP,       ZEROS
+            ADD     SP,         ONE
+            FETCH   TEMP,       (SP)
+            OUTPUT  TEMP,       ZEROS
+            LOAD    TEMP,       ZEROS
+            LOAD    SP,         ZEROS
+            LOAD    DISPLAY,    ONE
+            RETURN
+            
+; ================================================
+; RX ready
+; ================================================
+RXRDY       AND     STATUS,     001C
+            COMP    STATUS,     0000
+            CALLNZ  ERRORF
+            
+            INPUT   RX,         ZEROS
+            COMP    RX,         ZEROS
+            JUMPZ   EXIT_RX
+            COMP    RX,         TEMP
+            JUMPZ   RXFB
+                        
+            COMP    RX,         002A    ; *
+            JUMPZ   HOMETOWN_I
+            COMP    RX,         0040    ; @
+            JUMPZ   CHAR_CNT_I
+            COMP    RX,         007F    ; Backspace
+            JUMPZ   BACKSPACE_I
+            COMP    RX,         000D    ; CR
+            JUMPZ   CAR_RET_I
+            COMP    RX,         0025    ; %
+            JUMPZ   DUMP_MEM
+            
+            ADD     S_INDEX,    ONE
+            OUTPUT  RX,         ZEROS
+            OUTPUT  RX,         (SRAM)  ; Received Byte to SRAM
+            ADD     SRAM,       ONE
+            LOAD    TEMP,       RX
+            COMP    S_INDEX,    0028
+            JUMPZ   CAR_RET_I
+            
+EXIT_RX     RETEN
+
+RXFB        LOAD    SP,         0D00
+            FETCH   RX,         (SP)
+            LOAD    TEMP,       RX
+            RETEN
+
+; ================================================
+; PERR, FERR, or OVF flags set
+; ================================================
+ERRORF      OUTPUT  STATUS,     0002    ; Output Error
+            RETURN
+
+; ================================================
+; Receive Home town input
+; ================================================
+HOMETOWN_I  LOAD    DISPLAY,    0003
+            LOAD    SP,         0009
+            JUMP    RESETSTRING
+
+; ================================================
+; Receive character count input
+; ================================================
+CHAR_CNT_I  CALL    BIN2ASCII
+            LOAD    DISPLAY     0004
+            LOAD    SP,         00F0
+            JUMP    RESETSTRING
+
+; ================================================
+; Receive Backspace
+; ================================================
+BACKSPACE_I COMP    S_INDEX,    ZEROS
+            JUMPZ   RXFB
+            LOAD    DISPLAY,    0005
+            LOAD    SP,         0016
+            SUB     S_INDEX,    ONE
+            SUB     SRAM,       ONE
+            LOAD    TEMP,       ZEROS
+            OUTPUT  TEMP,       ZEROS
+            RETEN
+
+; ================================================
+; Receive Carriage Return
+; ================================================
+CAR_RET_I   LOAD    DISPLAY,    0006
+            LOAD    SP,         0014
+            JUMP    RESETSTRING
+
+; ================================================
+; Start Dumping Memory
+; ================================================
+DUMP_MEM    LOAD    DISPLAY,    0007
+            LOAD    SP,         8000
+            JUMP    RESETSTRING
+            
+; ================================================
+; Reset string index and output nothing
+; ================================================
+RESETSTRING ADD     COUNT,      S_INDEX
+            OUTPUT  RX,         (SRAM)  ; Received Byte to SRAM
+            ADD     SRAM,       ONE
+            LOAD    TEMP,       ZEROS
+            OUTPUT  TEMP,       ZEROS
+            LOAD    S_INDEX,    ZEROS
+            RETEN
+            
+; ================================================
+; ISR vectored through 0FFE
+; ================================================
+            ADDRESS 0FFE
+ENDIT       JUMP    ISR
+            END
